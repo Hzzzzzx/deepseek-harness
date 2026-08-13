@@ -16,11 +16,41 @@ Keys are write-only. The page receives a redacted descriptor after saving, never
 
 Choose **Add provider**, select a provider such as Anthropic or OpenAI, enter its API key, and save. The installed catalog supplies the endpoint, protocol, and model list.
 
-Providers with native authentication need their native credentials instead. Bedrock, Vertex, Azure, and Codex use AWS credentials and a region, an ADC project, an `api-version`, and OAuth respectively; filling only the API-key field does not configure them.
+Providers with native authentication need their native credentials instead. Bedrock, Vertex, and Azure use AWS credentials and a region, an ADC project, and an `api-version` respectively; filling only the API-key field does not configure them.
+
+### OAuth subscription login (Codex)
+
+OAuth-backed providers such as **OpenAI Codex** (`openai-codex`, ChatGPT Plus/Pro) authenticate through a subscription login rather than an API key. Declare the route with any credential reference — pi-ai only honors a per-request credential on a route that names one — then log in from a terminal:
+
+```yaml
+llm-pi-ai:
+  providers:
+    openai-codex:
+      apiKeyEnv: OPENAI_CODEX_API_KEY
+```
+
+```bash
+node packages/llm/llm-pi-ai/bin/dsh-oauth.mjs login openai-codex
+```
+
+The CLI offers browser login and headless device-code login. The credential lands in `$DSH_HOME/auth.json` (owner-only), and the harness refreshes the access token lazily on the next request — no restart and no background refresher. `dsh-oauth.mjs status` lists stored credentials without exposing secrets; `dsh-oauth.mjs logout <provider>` removes one. A stored OAuth credential wins over the referenced API key, so logging in needs no further configuration.
+
+Behind a restrictive network, the OAuth endpoints (`auth.openai.com`) must go through a proxy: start the CLI and `dsh web` with `NODE_USE_ENV_PROXY=1` so Node's fetch honors the `https_proxy` environment variable.
 
 ## Add a custom provider
 
 Choose **Add a custom provider** for a company gateway, self-hosted server, or provider absent from the installed catalog. Supply a lowercase Provider ID, base URL, API protocol, credential, and at least one model.
+
+### Command credentials
+
+A stored credential whose value starts with `!` is a command credential: the command's stdout is the key, executed fresh per request. Use it when another tool owns the credential's lifecycle — for example a token broker that reads an OAuth store it maintains and refreshes through the issuer — instead of copying a token that would go stale:
+
+```yaml
+# $DSH_HOME/.credentials.yaml
+GROK_BUILD_TOKEN: "!/Users/you/.local/bin/grok-prime-token"
+```
+
+The command runs through the system shell with a 10s ceiling; stdout is never logged, and an empty output, non-zero exit, or timeout fails the request with `MISSING_CREDENTIAL`, naming the command. The credential file already holds raw secrets under owner-only permissions, so executing a value from it grants no authority its owner did not already have.
 
 ![The custom provider form: Provider ID, display name, base URL, API protocol, and API key](providers-custom-form.png)
 

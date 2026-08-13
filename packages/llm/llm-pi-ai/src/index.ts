@@ -61,10 +61,12 @@ import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
 import type { AdapterRegistrationHandle, DirectoryRegistrationHandle, LlmConfigurableProvider } from '@deepseek-ai/dsh-llm'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { PiAiAdapter } from './adapter.ts'
-import { catalogProviderIds, catalogProviderTakesApiKey } from './catalog.ts'
+import { catalogProvider, catalogProviderIds, catalogProviderTakesApiKey } from './catalog.ts'
+import { isCommandCredential, resolveCommandCredential } from './command-credential.ts'
 import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
+import { resolveOAuthApiKey } from './oauth-store.ts'
 
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
@@ -80,6 +82,16 @@ export type {
   ResolvedPiAiProviderProfile,
 } from './config.ts'
 export { supportedProtocols } from './provider.ts'
+export { runOAuthCli } from './oauth-cli.ts'
+export { isCommandCredential, resolveCommandCredential } from './command-credential.ts'
+export {
+  listOAuthCredentials,
+  oauthStorePath,
+  readOAuthCredential,
+  removeOAuthCredential,
+  resolveOAuthApiKey,
+  writeOAuthCredential,
+} from './oauth-store.ts'
 
 export const name = 'llm-pi-ai'
 export const inject = ['llm']
@@ -176,6 +188,17 @@ export function apply(ctx: Context, config: Config): void {
     provider: string,
     profile: ResolvedPiAiProviderProfile,
   ): Promise<string | undefined> => {
+    // An OAuth-backed catalog route consults the durable OAuth store first: a
+    // completed login (see the package's OAuth CLI) yields a request-ready
+    // access token, refreshed lazily under the store's writer lock. The OAuth
+    // hit wins over the named credential reference so logging in needs no
+    // profile edit; without a stored credential the profile resolves exactly
+    // as before, including its MISSING_CREDENTIAL failure.
+    const oauth = catalogProvider(provider)?.auth.oauth
+    if (oauth !== undefined) {
+      const token = await resolveOAuthApiKey(provider, oauth)
+      if (token !== undefined) return assertUsableApiKey(token, 'llm-pi-ai', 'oauth')
+    }
     const ref = profile.apiKeyEnv
     // Only a profile that names no credential at all defers to pi-ai's
     // provider-native discovery. Once one is named, a miss must fail loud:
@@ -188,7 +211,22 @@ export function apply(ctx: Context, config: Config): void {
       ? (await credentials.resolve(ref))?.value
       // Without the seam the environment is the whole credential plane.
       : launchEnvironmentOf(ctx).get(ref)?.value
-    if (hit !== undefined && hit.length > 0) return assertUsableApiKey(hit, 'llm-pi-ai', ref)
+    if (hit !== undefined && hit.length > 0) {
+      // A stored value starting with `!` is a command credential: the named
+      // command's stdout is the key, executed fresh per request so a broker
+      // helper stays the single owner of refresh and rotation (see
+      // command-credential.ts). Failure is as loud as a missing key.
+      if (isCommandCredential(hit)) {
+        const resolved = await resolveCommandCredential(hit)
+        if (resolved.ok) return assertUsableApiKey(resolved.value, 'llm-pi-ai', ref)
+        throw new LlmError(
+          `llm-pi-ai: the command credential for provider route "${provider}" (${ref}) produced no key:`
+          + ` ${resolved.reason}`,
+          'MISSING_CREDENTIAL',
+        )
+      }
+      return assertUsableApiKey(hit, 'llm-pi-ai', ref)
+    }
     throw new LlmError(
       `llm-pi-ai: no credential for provider route "${provider}"; its profile resolves ${ref}, which is not`
       + ` set — store ${ref} through the credentials service (the web Models page writes it) or export it,`

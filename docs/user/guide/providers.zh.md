@@ -16,11 +16,41 @@
 
 选择**添加提供方**，选取 Anthropic 或 OpenAI 等提供方，输入其 API 密钥并保存。已安装目录会提供端点、协议和模型列表。
 
-使用原生认证的提供方需要各自的原生凭据。Bedrock、Vertex、Azure 和 Codex 分别使用 AWS 凭据与区域、ADC 项目、`api-version` 和 OAuth；只填写 API 密钥字段无法完成配置。
+使用原生认证的提供方需要各自的原生凭据。Bedrock、Vertex 和 Azure 分别使用 AWS 凭据与区域、ADC 项目和 `api-version`；只填写 API 密钥字段无法完成配置。
+
+### OAuth 订阅登录（Codex）
+
+**OpenAI Codex**（`openai-codex`，ChatGPT Plus/Pro）等 OAuth 提供方通过订阅登录而非 API 密钥认证。先用任意凭据引用声明路由——pi-ai 只在路由声明了凭据引用时才接受每次请求传入的凭据——然后在终端登录：
+
+```yaml
+llm-pi-ai:
+  providers:
+    openai-codex:
+      apiKeyEnv: OPENAI_CODEX_API_KEY
+```
+
+```bash
+node packages/llm/llm-pi-ai/bin/dsh-oauth.mjs login openai-codex
+```
+
+CLI 提供浏览器登录与无头设备码登录两种方式。凭证保存在 `$DSH_HOME/auth.json`（仅所有者可读），harness 会在下一次请求时惰性刷新访问令牌——无需重启，也无需后台刷新进程。`dsh-oauth.mjs status` 列出已存凭证（不显示密钥）；`dsh-oauth.mjs logout <provider>` 删除凭证。已存的 OAuth 凭证优先于引用的 API 密钥，登录后无需再改配置。
+
+网络受限时，OAuth 端点（`auth.openai.com`）需要走代理：以 `NODE_USE_ENV_PROXY=1` 启动 CLI 与 `dsh web`，Node 的 fetch 才会遵循 `https_proxy` 环境变量。
 
 ## 添加自定义提供方
 
 对于公司网关、自建服务器或已安装目录中不存在的提供方，选择**添加自定义提供方**。提供小写 Provider ID、基础 URL、API 协议、凭据和至少一个模型。
+
+### 命令凭据
+
+以 `!` 开头的已存凭据是**命令凭据**：命令的 stdout 就是密钥，每次请求时重新执行。当凭据的生命周期由其他工具管理时用它——例如一个读取自有 OAuth 存储并通过签发方刷新的 token broker——而不是复制一个会过期的 token：
+
+```yaml
+# $DSH_HOME/.credentials.yaml
+GROK_BUILD_TOKEN: "!/Users/you/.local/bin/grok-prime-token"
+```
+
+命令通过系统 shell 执行，上限 10 秒；stdout 永不记录。输出为空、非零退出或超时都会以 `MISSING_CREDENTIAL` 失败并点名该命令。凭据文件本身就以仅所有者可读的权限保存原始密钥，执行其中的值不会授予文件所有者本没有的权限。
 
 ![自定义提供方表单：Provider ID、显示名称、API 地址、API 协议、API 密钥](providers-custom-form.zh.png)
 
