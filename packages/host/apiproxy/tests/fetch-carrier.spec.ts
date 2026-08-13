@@ -768,6 +768,34 @@ describe('envelope observation', () => {
   })
 })
 
+describe('mintRpcId on insecure origins', () => {
+  it('falls back to getRandomValues when crypto.randomUUID is absent (LAN http origin)', async () => {
+    class Probe extends AbstractApiClient {
+      protected doFetch(_input: URL, init?: RequestInit): Promise<Response> {
+        const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as { rpcId?: string }
+        return Promise.resolve(Response.json({
+          type: 'server-response',
+          rpcId: body.rpcId,
+          result: { ok: true, value: { items: [] } },
+        }))
+      }
+    }
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+    const insecureCrypto = {
+      getRandomValues: globalThis.crypto.getRandomValues.bind(globalThis.crypto),
+    }
+    Object.defineProperty(globalThis, 'crypto', { value: insecureCrypto, configurable: true, writable: true })
+    try {
+      const probe = new Probe()
+      const response = await probe.sessions.list({})
+      expect(response.result).toEqual({ ok: true, value: { items: [] } })
+      expect(response.rpcId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    } finally {
+      if (original) Object.defineProperty(globalThis, 'crypto', original)
+    }
+  })
+})
+
 describe('resolveBase', () => {
   it('prefers a real location.origin and falls back to the internal authority', async () => {
     class Probe extends AbstractApiClient {

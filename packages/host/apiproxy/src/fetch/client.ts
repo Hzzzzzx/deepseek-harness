@@ -296,8 +296,18 @@ export abstract class AbstractApiClient implements IApiClient {
   }
 
   protected mintRpcId(): RpcId {
-    // crypto.randomUUID is a Web API (browser + Node ≥19): keeps this base platform-neutral.
-    return RpcId(crypto.randomUUID())
+    // crypto.randomUUID needs a secure context in browsers — on an insecure
+    // origin (a LAN deployment served as http://<lan-ip>:<port>) it is
+    // undefined and the throw escapes before any request is sent, which
+    // strands remote clients in a reconnect loop with an empty workspace
+    // list. getRandomValues is exposed on insecure origins too (and on
+    // Node ≥19), so fall back to a hand-rolled v4 there.
+    const cryptoApi = globalThis.crypto
+    return RpcId(
+      typeof cryptoApi.randomUUID === 'function'
+        ? cryptoApi.randomUUID()
+        : insecureOriginUuid(cryptoApi),
+    )
   }
 
   /**
@@ -541,6 +551,21 @@ export class InProcessApiClient extends AbstractApiClient {
 }
 
 /** Mirror fetch's abort rejection: the signal's reason when present, else a DOMException-style AbortError. */
+/**
+ * RFC 4122 v4 UUID from `crypto.getRandomValues()`, the only crypto primitive
+ * browsers expose on insecure origins. Mirrors dsh-client-connection's
+ * client/random-uuid.ts; duplicated because this host-side package must not
+ * depend on the client connection package.
+ */
+function insecureOriginUuid(cryptoApi: Crypto): string {
+  const bytes = cryptoApi.getRandomValues(new Uint8Array(16))
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  view.setUint8(6, (view.getUint8(6) & 0x0f) | 0x40)
+  view.setUint8(8, (view.getUint8(8) & 0x3f) | 0x80)
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
 function abortError(signal: AbortSignal): Error {
   const reason: unknown = signal.reason
   if (reason instanceof Error) return reason
