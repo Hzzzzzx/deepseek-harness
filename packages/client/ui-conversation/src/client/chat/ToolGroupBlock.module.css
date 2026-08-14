@@ -11,29 +11,31 @@
   font-size: 12px;
 }
 
-/* Members render indented one step under the disclosure, tightly stacked. */
+/* The expanded process body: normal prose flow with tight sub-groups. */
 .members {
   padding-left: 16px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 8px;
 }
 
-/* One narration line: muted, single-line, left-aligned text button. */
-.narration {
-  border: none;
-  padding: 2px 0;
-  background: transparent;
-  color: inherit;
-  opacity: 0.55;
-  font: inherit;
+/* Nested consecutive-tool sub-disclosure, one level down. */
+.subGroup {
+  display: block;
+}
+
+.subRow {
+  color: var(--dsw-alias-text-tertiary, inherit);
+}
+
+.subTitle {
   font-size: 12px;
-  line-height: 1.5;
-  text-align: left;
-  cursor: pointer;
-  overflow-wrap: anywhere;
+  opacity: 0.85;
 }
 
-.narration:hover {
-  opacity: 0.85;
+.subMembers {
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }

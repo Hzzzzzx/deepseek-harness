@@ -1,68 +1,26 @@
 /**
- * One collapsed run of settled tool rows: a single disclosure line carrying
- * the counted summary (read 3 files · ran 2 commands · 1 error), expanding to
- * the member rows rendered through the ordinary chat node seat — the same
- * components, the same interaction, merely folded.
+ * One collapsed run of a closed turn's process: a single disclosure line
+ * carrying the counted summary (read 3 files · ran 2 commands · 1 error).
+ * The expanded body re-renders the turn's process the way the reference
+ * clients do: narration as ordinary prose (same font as the final reply),
+ * and consecutive tool rows regrouped into nested sub-disclosures so runs
+ * of activity stay scannable inside the opened block.
  */
 
 import { memo, useMemo, useState } from 'react'
 import { DisclosureRow, IconChecklistOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ChatNodeStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ToolGroup } from './tool-groups.ts'
-import { countGroup } from './tool-groups.ts'
+import type { AssistantBlock, ChatNodeStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { FlowItem, ToolGroup } from './tool-groups.ts'
+import { countGroup, partitionToolGroups } from './tool-groups.ts'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
+import { AssistantMarkdown } from './AssistantMarkdown.tsx'
+import type { ChatViewSlotProps } from '../contract/slots.ts'
 import css from './ToolGroupBlock.module.css'
 
-/** First-line preview cap for one narration line inside the folded process. */
-const NARRATION_PREVIEW = 120
+/** ChatView props forwarded to every member ChatNodeSeat. */
+type SeatProps = Omit<Parameters<typeof ChatNodeSeat>[0], 'nodeKey'>
 
-/**
- * One narration step inside the folded process, as a single muted line —
- * the full markdown would break the process list into islands between the
- * tool rows. Expanding reveals the step's whole prose.
- */
-function NarrationLine({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false)
-  const flat = text.replace(/\s+/g, ' ').trim()
-  const preview = !expanded && flat.length > NARRATION_PREVIEW ? `${flat.slice(0, NARRATION_PREVIEW)}…` : flat
-  return (
-    <button
-      type="button"
-      className={css.narration}
-      aria-expanded={expanded}
-      title={expanded ? undefined : text}
-      onClick={() => { setExpanded(value => !value) }}
-    >
-      {preview}
-    </button>
-  )
-}
-
-/**
- * One folded member: tool rows keep their compact seat row; narration steps
- * collapse to the muted line.
- */
-function GroupMember({
-  nodeKey,
-  resolveNodes,
-  seatProps,
-}: {
-  nodeKey: string
-  resolveNodes: () => ChatNodeStore
-  seatProps: Omit<Parameters<typeof ChatNodeSeat>[0], 'nodeKey'>
-}) {
-  const node = resolveNodes().get(nodeKey)
-  if (node !== undefined && node.kind === 'assistant-step') {
-    const blocks = (node.data as { blocks?: readonly { kind: string; text?: string }[] }).blocks
-    const prose = Array.isArray(blocks)
-      ? blocks.filter(block => block.kind === 'text').map(block => block.text ?? '').join(' ')
-      : ''
-    if (prose !== '') return <NarrationLine text={prose} />
-  }
-  return <ChatNodeSeat nodeKey={nodeKey} {...seatProps} />
-}
-
-/** Counting buckets in summary order with their label keys (literal keys keep the translate call typed). */
+/** Counting buckets in summary order with their label keys. */
 const VERB_KEYS = [
   ['read', 'group.verbs.read'],
   ['search', 'group.verbs.search'],
@@ -73,10 +31,89 @@ const VERB_KEYS = [
   ['others', 'group.verbs.others'],
 ] as const
 
+/** Build one group's counted summary line through the locale seat. */
+function groupSummary(group: ToolGroup, resolveNodes: () => ChatNodeStore, t: ChatViewSlotProps['t']): string {
+  const counts = countGroup(group, resolveNodes())
+  const verbs = VERB_KEYS
+    .filter(([bucket]) => counts[bucket] > 0)
+    .map(([bucket, key]) => t(key, { count: counts[bucket] }))
+    .join(' · ')
+  const errors = counts.errors > 0 ? t('group.errors', { count: counts.errors }) : ''
+  return `${t('group.summary', { verbs })}${errors}`
+}
+
 /**
- * The collapsed tool-run disclosure.
- * @param props - the group, a node-store thunk, and the ChatView props
- * forwarded to every member ChatNodeSeat.
+ * The nested sub-disclosure for consecutive tool rows inside the expanded
+ * process block — one more counted line one level down.
+ */
+const ToolSubGroup = memo(function ToolSubGroup({
+  group,
+  resolveNodes,
+  seatProps,
+}: {
+  group: ToolGroup
+  resolveNodes: () => ChatNodeStore
+  seatProps: SeatProps
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const summary = useMemo(
+    () => groupSummary(group, resolveNodes, seatProps.t as ChatViewSlotProps['t']),
+    [group, resolveNodes, seatProps.t],
+  )
+  return (
+    <div className={css.subGroup}>
+      <DisclosureRow
+        rowClassName={css.subRow}
+        titleClassName={css.subTitle}
+        chevronClassName={css.subChevron}
+        icon={<IconChecklistOutline14 size={12} />}
+        title={summary}
+        open={expanded}
+        expandable
+        expandOnRowClick
+        onToggle={() => { setExpanded(value => !value) }}
+      />
+      {expanded && (
+        <div className={css.subMembers}>
+          {group.keys.map(nodeKey => (
+            <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} {...seatProps} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+})
+
+/**
+ * One narration step inside the expanded process: ordinary prose through the
+ * same markdown the final reply uses — same font, same rendering — because
+ * the reference clients render intermediate narration as normal text.
+ */
+const NarrationStep = memo(function NarrationStep({
+  nodeKey,
+  resolveNodes,
+  seatProps,
+}: {
+  nodeKey: string
+  resolveNodes: () => ChatNodeStore
+  seatProps: SeatProps
+}) {
+  const node = resolveNodes().get(nodeKey)
+  const blocks = node !== undefined && node.kind === 'assistant-step'
+    ? (node.data as { blocks?: readonly AssistantBlock[] }).blocks
+    : undefined
+  return (
+    <AssistantMarkdown
+      blocks={blocks ?? []}
+      streaming={false}
+      t={seatProps.t as ChatViewSlotProps['t']}
+    />
+  )
+})
+
+/**
+ * The collapsed turn-process disclosure.
+ * @param props - the group, a node-store thunk, and the ChatView props.
  */
 export const ToolGroupBlock = memo(function ToolGroupBlock({
   group,
@@ -86,19 +123,17 @@ export const ToolGroupBlock = memo(function ToolGroupBlock({
   group: ToolGroup
   /** Thunk resolving the live chat node store (kept out of memo deps). */
   resolveNodes: () => ChatNodeStore
-  /** The ChatView's props forwarded to every member ChatNodeSeat. */
-  seatProps: Omit<Parameters<typeof ChatNodeSeat>[0], 'nodeKey'>
+  seatProps: SeatProps
 }) {
   const [expanded, setExpanded] = useState(false)
-  const summary = useMemo(() => {
-    const counts = countGroup(group, resolveNodes())
-    const verbs = VERB_KEYS
-      .filter(([bucket]) => counts[bucket] > 0)
-      .map(([bucket, key]) => seatProps.t(key, { count: counts[bucket] }))
-      .join(' · ')
-    const errors = counts.errors > 0 ? seatProps.t('group.errors', { count: counts.errors }) : ''
-    return `${seatProps.t('group.summary', { verbs })}${errors}`
-  }, [group, resolveNodes, seatProps.t])
+  const summary = useMemo(
+    () => groupSummary(group, resolveNodes, seatProps.t as ChatViewSlotProps['t']),
+    [group, resolveNodes, seatProps.t],
+  )
+  // Inside the expanded body, consecutive tool rows regroup (the same
+  // consecutive-run rule, one level down); narration and other rows keep
+  // their places between the sub-groups.
+  const inner = useMemo(() => partitionToolGroups(group.keys, resolveNodes()), [group, resolveNodes])
   return (
     <div className={css.root} data-tool-group={group.keys[0]}>
       <DisclosureRow
@@ -114,9 +149,16 @@ export const ToolGroupBlock = memo(function ToolGroupBlock({
       />
       {expanded && (
         <div className={css.members}>
-          {group.keys.map(nodeKey => (
-            <GroupMember key={nodeKey} nodeKey={nodeKey} resolveNodes={resolveNodes} seatProps={seatProps} />
-          ))}
+          {inner.map((item: FlowItem) => {
+            if (item.kind === 'group') {
+              return <ToolSubGroup key={`sub:${item.keys[0]}`} group={item} resolveNodes={resolveNodes} seatProps={seatProps} />
+            }
+            const node = resolveNodes().get(item.key)
+            if (node !== undefined && node.kind === 'assistant-step') {
+              return <NarrationStep key={item.key} nodeKey={item.key} resolveNodes={resolveNodes} seatProps={seatProps} />
+            }
+            return <ChatNodeSeat key={item.key} nodeKey={item.key} {...seatProps} />
+          })}
         </div>
       )}
     </div>

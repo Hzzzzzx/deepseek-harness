@@ -90,10 +90,13 @@ async function bench(nodes: ToolResultNode[]) {
 }
 
 
-/** The chat folds runs of settled tool rows; open the fold to reach members. */
+/** The chat folds runs of settled tool rows; open the fold — and the nested
+ consecutive-tool sub-group — to reach member rows. */
 function expandToolGroup(container: HTMLElement): void {
   const toggle = container.querySelector('[data-tool-group] [aria-expanded]')
   if (toggle !== null) fireEvent.click(toggle)
+  const nested = container.querySelectorAll('[data-tool-group] [aria-expanded]')[1]
+  if (nested !== undefined) fireEvent.click(nested)
 }
 
 describe('keyed toolview hole through the real machinery', () => {
