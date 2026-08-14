@@ -15,7 +15,7 @@ import { act, cleanup, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { AppFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
 import type { AppFrameProps } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
-import { SIDEBAR_COLLAPSED } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
+import { SIDEBAR_COLLAPSED, SIDEBAR_DRAWER } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 import { createLayoutStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
 import type {
   SessionId, SessionListState, WorkspaceListState,
@@ -284,44 +284,76 @@ describe('AppFrame', () => {
   })
 })
 
-describe('AppFrame — narrow-viewport auto-collapse', () => {
-  it('mounts collapsed below the breakpoint with no sidebar handle', () => {
+describe('AppFrame — narrow-viewport drawer', () => {
+  it('mounts with the sidebar stowed as an overlay drawer (grid track zero, not the rail)', () => {
     frameWidth = 980
     const { frame, slotCalls } = mountFrame()
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
-    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
-    expect(slotCalls.filter(c => c.key === 'sidebar').at(-1)!.props).toEqual({ collapsed: true, width: SIDEBAR_COLLAPSED })
-    expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(0)
-  })
-
-  it('narrow toggle re-expands over the squeezed center and back', () => {
-    frameWidth = 980
-    const { frame, instance } = mountFrame()
-    act(() => { instance.actions.toggleSidebar() })
-    expect(tracks(frame)).toEqual([280, 0])
+    expect(frame.style.gridTemplateColumns).toBe('minmax(0, 1fr) 0px')
+    expect(frame.hasAttribute('data-narrow')).toBe(true)
+    expect(frame.hasAttribute('data-drawer-open')).toBe(false)
     expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(false)
-    expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(1)
-    act(() => { instance.actions.toggleSidebar() })
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
+    // Wide content fills the drawer (collapsed stays false); width is the drawer, not the rail.
+    expect(slotCalls.filter(c => c.key === 'sidebar').at(-1)!.props).toEqual({ collapsed: false, width: SIDEBAR_DRAWER })
+    // No column drag handle in drawer mode; the mask + edge are the gesture surfaces.
+    expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(0)
+    expect(frame.querySelector('[class*="drawerMask"]')).toBeTruthy()
+    expect(frame.querySelector('[class*="drawerEdge"]')).toBeTruthy()
   })
 
-  it('a wide-closed preference re-expands at the contract default while narrow', () => {
-    frameWidth = 1920
-    const { frame, instance } = mountFrame()
-    act(() => { instance.actions.toggleSidebar() }) // close while wide: preference 0
+  it('openSidebar reveals the drawer and drops the edge; closeSidebar stows it', () => {
     frameWidth = 980
-    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
-    act(() => { instance.actions.toggleSidebar() })
-    expect(tracks(frame)).toEqual([280, 0])
-    expect(instance.getSnapshot().sidebar).toBe(0) // preference untouched
+    const { frame, instance } = mountFrame()
+    act(() => { instance.actions.openSidebar() })
+    expect(frame.hasAttribute('data-drawer-open')).toBe(true)
+    // The edge vanishes while open — the mask is the close surface.
+    expect(frame.querySelector('[class*="drawerEdge"]')).toBeNull()
+    act(() => { instance.actions.closeSidebar() })
+    expect(frame.hasAttribute('data-drawer-open')).toBe(false)
+    expect(frame.querySelector('[class*="drawerEdge"]')).toBeTruthy()
   })
 
-  it('shrinking across the breakpoint auto-collapses; re-widening restores the drag width', () => {
+  it('selecting a session collapses an open drawer back to the conversation', () => {
+    frameWidth = 980
+    const { frame, instance, rerenderFrame } = mountFrame()
+    act(() => { instance.actions.openSidebar() })
+    expect(frame.hasAttribute('data-drawer-open')).toBe(true)
+    selectedSession.current = 's-other' as SessionId
+    act(() => { rerenderFrame() })
+    expect(frame.hasAttribute('data-drawer-open')).toBe(false)
+  })
+
+  it('Escape closes an open drawer', () => {
+    frameWidth = 980
+    const { frame, instance } = mountFrame()
+    act(() => { instance.actions.openSidebar() })
+    act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
+    expect(frame.hasAttribute('data-drawer-open')).toBe(false)
+  })
+
+  it('a left-edge right-swipe past the threshold reveals the drawer', () => {
+    frameWidth = 980
+    const { frame } = mountFrame()
+    const edge = frame.querySelector('[class*="drawerEdge"]')!
+    drag(edge, 0, 200) // 200px > 40% of the drawer width
+    expect(frame.hasAttribute('data-drawer-open')).toBe(true)
+  })
+
+  it('a mask left-swipe past the threshold closes the drawer', () => {
+    frameWidth = 980
+    const { frame, instance } = mountFrame()
+    act(() => { instance.actions.openSidebar() })
+    const mask = frame.querySelector('[class*="drawerMask"]')!
+    drag(mask, 0, -200) // left-swipe 200px past the 40% threshold
+    expect(frame.hasAttribute('data-drawer-open')).toBe(false)
+  })
+
+  it('shrinking across the breakpoint stows the drawer; re-widening restores the drag width', () => {
     const { frame, instance } = mountFrame()
     act(() => { instance.actions.setSidebar(400) })
     frameWidth = 980
     act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
+    expect(frame.style.gridTemplateColumns).toBe('minmax(0, 1fr) 0px')
+    expect(frame.hasAttribute('data-narrow')).toBe(true)
     frameWidth = 1920
     act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
     expect(tracks(frame)).toEqual([400, 0])

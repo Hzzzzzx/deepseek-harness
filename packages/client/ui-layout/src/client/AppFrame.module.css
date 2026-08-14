@@ -117,3 +117,73 @@
 .overlayLayer > * {
   pointer-events: auto;
 }
+
+/* --- Narrow-viewport drawer (data-narrow on .frame) ----------------------- */
+/* The sidebar leaves the grid and surfaces as a fixed-width overlay drawer.
+   Closed: translated off the left edge; data-drawer-open slides it in;
+   data-drawer-dragging suspends the transition for pointer-paced following. */
+.frame[data-narrow] .sidebarCol {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(var(--drawer-w, 320px), 85%);
+  max-width: 85%;
+  z-index: 31;
+  box-shadow: var(--dsw-shadow-lv3);
+  transform: translateX(-100%);
+  transition: transform var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+  /* Let vertical scroll pass through the drawer content; horizontal motion is
+     captured by the edge/mask drag surfaces. */
+  touch-action: pan-y;
+}
+
+.frame[data-narrow][data-drawer-open] .sidebarCol {
+  transform: translateX(0);
+}
+
+.frame[data-narrow][data-drawer-dragging] .sidebarCol {
+  transition: none;
+}
+
+/* Mask over the conversation: dim + blur while the drawer is open, and the
+   close-gesture surface (tap or left-swipe). */
+.drawerMask {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: var(--dsw-alias-bg-mask-1);
+  backdrop-filter: var(--dsw-mask-blur);
+  opacity: 0;
+  pointer-events: none;
+  touch-action: none;
+  transition: opacity var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+.frame[data-narrow][data-drawer-open] .drawerMask {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.frame[data-narrow][data-drawer-dragging] .drawerMask {
+  transition: none;
+}
+
+/* Left-edge reveal strip: the open-gesture hit area while the drawer is
+   closed. Sits above the mask so it stays hittable. */
+.drawerEdge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 24px;
+  z-index: 32;
+  touch-action: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame[data-narrow] .sidebarCol,
+  .drawerMask {
+    transition: none;
+  }
+}

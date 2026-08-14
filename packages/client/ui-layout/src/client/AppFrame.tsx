@@ -11,9 +11,9 @@
  * zero self-made hooks.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import type { PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import { computeColumns, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT } from './columns.ts'
+import { computeColumns, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT, SIDEBAR_DRAWER } from './columns.ts'
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
 
@@ -22,6 +22,9 @@ export type AppFrameProps =
   & PropsRuntime<'root'>
   & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
+
+/** Clamp a drawer drag offset into the closed→open range [0, SIDEBAR_DRAWER]. */
+const clampReveal = (px: number): number => Math.max(0, Math.min(SIDEBAR_DRAWER, px))
 
 /** Center column grid item (session-body building block). */
 function CenterColumn(props: { children?: ReactNode }) {
@@ -129,19 +132,111 @@ export function AppFrame({
 
   // Narrow viewports auto-collapse the sidebar; the store mirror keeps
   // toggleSidebar's semantics right (narrow toggles flip the manual
-  // re-expand override, stores.ts). Collapsed is decided here, so the
-  // solver stays breakpoint-free: a narrow re-expand passes the preference
-  // (or the default when the wide preference is closed) and the center
-  // absorbs the squeeze.
+  // re-expand override, stores.ts). Below the breakpoint the sidebar leaves
+  // the grid and surfaces as an overlay drawer (data-narrow): collapsed stays
+  // false so SidebarRoot renders wide content inside the drawer, and the
+  // grid's sidebar track is zero (the drawer is absolute, not a column) while
+  // the conversation keeps the full viewport.
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
   useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
-  const sidebarCollapsed = narrow ? !panels.narrowExpanded : panels.sidebar === 0
+  const drawerOpen = narrow && panels.narrowExpanded
+  const sidebarCollapsed = narrow ? false : panels.sidebar === 0
   const sidebarPreference = sidebarCollapsed
     ? 0
     : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
-  const cols = computeColumns(viewport, sidebarPreference, detailsSession === undefined ? 0 : panels.details)
+  const cols = computeColumns(viewport, narrow ? 0 : sidebarPreference, detailsSession === undefined ? 0 : panels.details)
   const colsRef = useRef(cols)
   colsRef.current = cols
+
+  // Selecting a session (row open, New Session, fork) collapses an open
+  // drawer so the user lands back on the conversation. `current` is the
+  // widest signal — it moves on every selection path, including undefined →
+  // first session from the hero, which the details effect above does not
+  // cover (it gates on a non-blank session).
+  const currentSession = useSessions(s => s.current)
+  const lastCurrent = useRef(currentSession)
+  useEffect(() => {
+    if (lastCurrent.current !== currentSession) {
+      if (drawerOpen) actions.closeSidebar()
+      lastCurrent.current = currentSession
+    }
+  }, [actions, currentSession, drawerOpen])
+
+  // Escape closes an open drawer (modal parity).
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') actions.closeSidebar()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('keydown', onKey) }
+  }, [actions, drawerOpen])
+
+  // Drawer drag-following: `drawerRevealed` is the visible px offset from
+  // fully closed (0) to fully open (SIDEBAR_DRAWER); null leaves the position
+  // to the data-drawer-open CSS transition. The left edge reveals (open);
+  // the mask drags left or taps (close). Both use pointer capture + rAF like
+  // DragHandle, and Pointer Events cover touch and mouse alike.
+  const [drawerRevealed, setDrawerRevealed] = useState<number | null>(null)
+  const edgeOrigin = useRef(0)
+  const edgeLatest = useRef(0)
+  const edgeFrame = useRef<number | null>(null)
+  const onEdgePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    edgeOrigin.current = event.clientX
+    edgeLatest.current = event.clientX
+  }, [])
+  const onEdgePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
+    edgeLatest.current = event.clientX
+    edgeFrame.current ??= requestAnimationFrame(() => {
+      edgeFrame.current = null
+      setDrawerRevealed(clampReveal(edgeLatest.current - edgeOrigin.current))
+    })
+  }, [])
+  const onEdgePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    if (edgeFrame.current !== null) { cancelAnimationFrame(edgeFrame.current); edgeFrame.current = null }
+    const dx = edgeLatest.current - edgeOrigin.current
+    setDrawerRevealed(null)
+    if (dx > SIDEBAR_DRAWER * 0.4) actions.openSidebar()
+  }, [actions])
+
+  const maskOrigin = useRef(0)
+  const maskLatest = useRef(0)
+  const maskFrame = useRef<number | null>(null)
+  const maskMoved = useRef(false)
+  const onMaskPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId)
+    maskOrigin.current = event.clientX
+    maskLatest.current = event.clientX
+    maskMoved.current = false
+  }, [])
+  const onMaskPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
+    maskLatest.current = event.clientX
+    if (Math.abs(maskLatest.current - maskOrigin.current) > 8) maskMoved.current = true
+    maskFrame.current ??= requestAnimationFrame(() => {
+      maskFrame.current = null
+      setDrawerRevealed(clampReveal(SIDEBAR_DRAWER + (maskLatest.current - maskOrigin.current)))
+    })
+  }, [])
+  const onMaskPointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    if (maskFrame.current !== null) { cancelAnimationFrame(maskFrame.current); maskFrame.current = null }
+    const dx = maskLatest.current - maskOrigin.current
+    setDrawerRevealed(null)
+    // A tap (no move) or a left-swipe past the threshold both close.
+    if (!maskMoved.current || dx < -SIDEBAR_DRAWER * 0.4) actions.closeSidebar()
+  }, [actions])
+
+  const drawerTransform = drawerRevealed === null
+    ? undefined
+    : `translateX(calc(-100% + ${drawerRevealed}px))`
+  const maskOpacity = drawerRevealed === null ? undefined : drawerRevealed / SIDEBAR_DRAWER
 
   // The drag base is the rendered width captured at drag start (grabbing a
   // concession-clamped panel must not jump back to the stored preference);
@@ -165,20 +260,33 @@ export function AppFrame({
     <div
       ref={frameRef}
       className={css.frame}
-      style={{ gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
+      style={{ gridTemplateColumns: narrow
+        // 窄屏下侧边栏是 absolute 抽屉、不占 grid 轨道；三轨模板会让
+        // 在流的 center/details 错位一轨（center 落到 0 轨、details 落满 1fr）。
+        ? `minmax(0, 1fr) ${cols.details}px`
+        : `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-details-collapsed={cols.details === 0 || undefined}
       data-dragging={dragging || undefined}
+      data-narrow={narrow || undefined}
+      data-drawer-open={drawerOpen || undefined}
+      data-drawer-dragging={drawerRevealed !== null || undefined}
     >
-      <div className={css.sidebarCol}>
+      <div
+        className={css.sidebarCol}
+        style={narrow
+          ? ({ '--drawer-w': `${SIDEBAR_DRAWER}px`, transform: drawerTransform } as CSSProperties)
+          : undefined}
+      >
         {/* Render-site slot call with live concession output: a closed
             sidebar keeps the mounted slot at the compact-rail width, and the
             component sees its rendered state as owner params decided here
             (collapsed follows the resolved rail, so a derived auto-collapse
-            renders the rail UI too). */}
+            renders the rail UI too). Narrow viewports force wide content
+            inside the drawer (collapsed stays false, width is the drawer). */}
         {renderSlot('sidebar', {
           collapsed: sidebarCollapsed,
-          width: cols.sidebar,
+          width: narrow ? SIDEBAR_DRAWER : cols.sidebar,
         })}
       </div>
       <>
@@ -190,11 +298,35 @@ export function AppFrame({
         <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
         <DetailsColumn>{renderSlot('details', {})}</DetailsColumn>
       </>
+      {/* Narrow-viewport drawer: a mask over the conversation plus a left-edge
+          reveal strip. The mask closes on tap or left-swipe; the edge pulls the
+          drawer open. Both are absolute frame children above the columns. */}
+      {narrow && (
+        <>
+          <div
+            className={css.drawerMask}
+            aria-hidden="true"
+            style={maskOpacity === undefined ? undefined : { opacity: maskOpacity }}
+            onPointerDown={onMaskPointerDown}
+            onPointerMove={onMaskPointerMove}
+            onPointerUp={onMaskPointerUp}
+          />
+          {!drawerOpen && (
+            <div
+              className={css.drawerEdge}
+              onPointerDown={onEdgePointerDown}
+              onPointerMove={onEdgePointerMove}
+              onPointerUp={onEdgePointerUp}
+            />
+          )}
+        </>
+      )}
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}
       </div>
-      {/* The collapsed rail is fixed-width: no resize handle while closed. */}
-      {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
+      {/* The collapsed rail is fixed-width: no resize handle while closed.
+          Narrow viewports use the drawer, not a resizable column. */}
+      {!sidebarCollapsed && !narrow && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
       {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
     </div>
   )

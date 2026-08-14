@@ -27,6 +27,11 @@ export const SIDEBAR_MAX = 420
 export const SIDEBAR_DEFAULT = 280
 /** Closed-sidebar rail: a 24px icon column between 16px horizontal paddings. */
 export const SIDEBAR_COLLAPSED = 56
+/** Mobile drawer width: below the auto-collapse breakpoint the sidebar surfaces
+ * as a fixed-width overlay drawer (AppFrame data-narrow) instead of a grid
+ * column, so the conversation keeps the full viewport while the sidebar is
+ * stowed. */
+export const SIDEBAR_DRAWER = 320
 /** Viewport width below which the sidebar auto-collapses to the rail (deepsuite
  * LG breakpoint); a manual toggle below it re-expands over the squeezed center
  * (stores.ts narrowExpanded). */
