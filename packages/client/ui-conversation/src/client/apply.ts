@@ -230,6 +230,7 @@ export function apply(ctx: Context): void {
         }
         sessions.open(nextId)
       },
+      openSidebar: () => { layout.openSidebar() },
     }),
   }, ConversationRoot)
 

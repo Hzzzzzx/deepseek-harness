@@ -85,6 +85,28 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().details).toBe(0)
   })
 
+  it('openSidebar/closeSidebar are explicit — toggleSidebar cannot ensure a state', () => {
+    const { store, actions } = createLayoutStore().create()
+    // Wide: close/open pair over the width preference (0 = closed).
+    actions.closeSidebar()
+    expect(store.getSnapshot().sidebar).toBe(0)
+    actions.openSidebar()
+    expect(store.getSnapshot().sidebar).toBe(SIDEBAR_DEFAULT)
+    // Narrow: open/close drive the drawer override; the width preference survives.
+    actions.setSidebar(400)
+    actions.setNarrow(true)
+    actions.openSidebar()
+    expect(store.getSnapshot()).toMatchObject({ narrow: true, narrowExpanded: true, sidebar: 400 })
+    actions.closeSidebar()
+    expect(store.getSnapshot()).toMatchObject({ narrowExpanded: false, sidebar: 400 })
+    // closeSidebar reaches closed from any prior state — the drawer mask, Escape,
+    // and session-select all need "ensure closed", which toggle cannot provide.
+    actions.openSidebar()
+    actions.closeSidebar()
+    actions.closeSidebar()
+    expect(store.getSnapshot().narrowExpanded).toBe(false)
+  })
+
   it('does not persist panel geometry', () => {
     const first = createLayoutStore().create()
     first.actions.setSidebar(400)

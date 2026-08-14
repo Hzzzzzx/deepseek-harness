@@ -247,6 +247,7 @@ function mount(
     renderSlot,
     renderSlotChain,
     selectWorkspace: retargetWorkspace,
+    openSidebar: vi.fn(),
     t,
   }
   const view = render(<ConversationRoot {...props} />)
