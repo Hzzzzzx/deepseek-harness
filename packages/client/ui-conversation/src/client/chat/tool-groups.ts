@@ -1,19 +1,22 @@
 /**
- * Settled tool-call collapsing: runs of consecutive completed tool rows fold
- * into one disclosure block so a long turn's historical activity stops
- * pushing prose off screen, while running rows stay fully visible (the
- * reader follows live work, not history). Pure derivation over the ordered
- * chat node list; rendering happens in ToolGroupBlock through the same
- * ChatNodeSeat rows the ungrouped flow uses.
+ * Turn-aware process collapsing: when a turn closes, its intermediate
+ * process — settled tool calls and the prose-free assistant steps (pure
+ * thinking / tool-head chatter) that are not the turn's final reply — folds
+ * into ONE disclosure block anchored ahead of that reply, so a completed
+ * turn reads as its answer with the work behind one line (read 3 files ·
+ * ran 2 commands). Prose-carrying steps stay visible — narration is reading
+ * material, not process. An open turn keeps every row visible (the reader
+ * follows live work). Snapshots without resolved turns fall back to folding
+ * consecutive runs of settled tool rows.
  */
 
 import type { ChatNodeStore, ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
 import { isRunningTool } from '../contract/chat-nodes.ts'
 
-/** Minimum run length that collapses; a lone tool row stays as-is. */
+/** Minimum run length for the no-timeline fallback; turn-level folding has no minimum. */
 export const GROUP_MIN = 2
 
-/** One collapsed run of settled tool-call nodes. */
+/** One collapsed run of process nodes. */
 export interface ToolGroup {
   readonly kind: 'group'
   /** Chat node keys of the member rows, in flow order. */
@@ -23,12 +26,7 @@ export interface ToolGroup {
 /** A flow item: either one ordinary node key or one collapsed group. */
 export type FlowItem = { readonly kind: 'node'; readonly key: string } | ToolGroup
 
-/**
- * Read one flow node's tool root when it is a tool-call row.
- * @param nodes - the chat node store.
- * @param key - the flow node key.
- * @returns the tool lifecycle block, or undefined for every other kind.
- */
+/** Read one flow node's tool root when it is a tool-call row. */
 function toolRootOf(nodes: ChatNodeStore, key: string): ToolCallBlock | undefined {
   const node = nodes.get(key)
   if (node === undefined || node.kind !== 'tool-call') return undefined
@@ -37,33 +35,96 @@ function toolRootOf(nodes: ChatNodeStore, key: string): ToolCallBlock | undefine
   return (node.data as { root: ToolCallBlock }).root
 }
 
+/** The node's turn number when its location resolves inside one. */
+function turnOf(nodes: ChatNodeStore, key: string): number | undefined {
+  const location = nodes.get(key)?.location
+  if (location === undefined || location.kind === 'session' || location.kind === 'unresolved') return undefined
+  return location.turn.status === 'closed' ? location.turn.turn : undefined
+}
+
+/** Whether the node is an assistant step. */
+function isAssistantStep(nodes: ChatNodeStore, key: string): boolean {
+  return nodes.get(key)?.kind === 'assistant-step'
+}
+
 /**
- * Partition the ordered node keys into flow items, collapsing consecutive
- * runs of SETTLED tool-call nodes (length >= GROUP_MIN) into groups.
- * Running tool calls, and any node of another kind, break a run and render
- * as ordinary items.
+ * Whether an assistant step carries reading material (text or image blocks).
+ * Prose-free steps — reasoning and tool heads only — are process chatter and
+ * fold; prose steps stay visible even mid-turn-history.
+ */
+function assistantStepHasProse(nodes: ChatNodeStore, key: string): boolean {
+  const node = nodes.get(key)
+  if (node === undefined || node.kind !== 'assistant-step') return false
+  const blocks = (node.data as { blocks?: readonly { kind: string }[] }).blocks
+  return Array.isArray(blocks) && blocks.some(block => block.kind === 'text' || block.kind === 'image')
+}
+
+/**
+ * Partition the ordered node keys into flow items.
+ *
+ * Turn-aware pass: for every closed turn, the last assistant-step is the
+ * keeper; every other assistant-step and every settled tool-call of that
+ * turn folds into one group placed at the first folded member's position.
+ * Nodes of other kinds (errors, tails, retries) keep their positions.
+ * Keys outside closed turns render as themselves, except the fallback:
+ * consecutive settled tool runs of length >= GROUP_MIN still fold.
  * @param order - the chat snapshot's ordered node keys.
- * @param nodes - the chat node store (kind + tool lifecycle lookup).
+ * @param nodes - the chat node store (kind, tool lifecycle, location).
  * @returns flow items in order.
  */
 export function partitionToolGroups(order: readonly string[], nodes: ChatNodeStore): readonly FlowItem[] {
-  const items: FlowItem[] = []
-  let run: string[] = []
-  const flush = (): void => {
-    if (run.length >= GROUP_MIN) items.push({ kind: 'group', keys: run })
-    else for (const key of run) items.push({ kind: 'node', key })
-    run = []
+  // Pass 1: per closed turn, the foldable keys and each turn's keeper.
+  const keeperOf = new Map<number, string>()
+  const foldableOf = new Map<number, string[]>()
+  for (const key of order) {
+    const turn = turnOf(nodes, key)
+    if (turn === undefined) continue
+    if (isAssistantStep(nodes, key)) keeperOf.set(turn, key)
   }
   for (const key of order) {
+    const turn = turnOf(nodes, key)
+    if (turn === undefined) continue
+    const node = nodes.get(key)
     const root = toolRootOf(nodes, key)
-    if (root !== undefined && !isRunningTool(root)) {
-      run.push(key)
+    const foldable = (node !== undefined && root !== undefined && !isRunningTool(root))
+      || (isAssistantStep(nodes, key) && keeperOf.get(turn) !== key && !assistantStepHasProse(nodes, key))
+    if (!foldable) continue
+    const list = foldableOf.get(turn)
+    if (list === undefined) foldableOf.set(turn, [key])
+    else list.push(key)
+  }
+
+  // Pass 2: emit. A turn's fold lands once, at its first folded member.
+  const items: FlowItem[] = []
+  const foldedTurns = new Set<number>()
+  let fallbackRun: string[] = []
+  const flushFallback = (): void => {
+    if (fallbackRun.length >= GROUP_MIN) items.push({ kind: 'group', keys: fallbackRun })
+    else for (const key of fallbackRun) items.push({ kind: 'node', key })
+    fallbackRun = []
+  }
+  for (const key of order) {
+    const turn = turnOf(nodes, key)
+    if (turn !== undefined) {
+      const foldList = foldableOf.get(turn)
+      if (foldList !== undefined && foldList.includes(key)) {
+        flushFallback()
+        if (!foldedTurns.has(turn)) {
+          foldedTurns.add(turn)
+          items.push({ kind: 'group', keys: foldList })
+        }
+        continue
+      }
+    }
+    const root = toolRootOf(nodes, key)
+    if (turn === undefined && root !== undefined && !isRunningTool(root)) {
+      fallbackRun.push(key)
       continue
     }
-    flush()
+    flushFallback()
     items.push({ kind: 'node', key })
   }
-  flush()
+  flushFallback()
   return items
 }
 

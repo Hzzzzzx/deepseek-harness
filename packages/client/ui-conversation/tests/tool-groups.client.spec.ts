@@ -5,11 +5,16 @@ import type { ChatNodeStore, RunningToolCall, ToolResultNode } from '@deepseek-a
 import { countGroup, GROUP_MIN, partitionToolGroups, type FlowItem } from '../src/client/chat/tool-groups.ts'
 
 /** Flow node stub: only kind + tool root participate in the derivation. */
-function stubNode(kind: string, root?: unknown): { kind: string; data: unknown } {
+function stubNode(kind: string, root?: unknown): { kind: string; data: unknown; location?: unknown } {
   return { kind, data: root === undefined ? {} : { root } }
 }
 
-function storeOf(entries: Record<string, { kind: string; data: unknown }>): ChatNodeStore {
+/** Location stub placing a node inside one closed turn. */
+function inTurn(turn: number): { kind: 'step'; turn: { turn: number; status: 'closed' } } {
+  return { kind: 'step', turn: { turn, status: 'closed' } }
+}
+
+function storeOf(entries: Record<string, { kind: string; data: unknown; location?: unknown }>): ChatNodeStore {
   return {
     get: key => entries[key] as never,
     values: () => Object.values(entries) as never,
@@ -87,5 +92,52 @@ describe('countGroup', () => {
     expect(countGroup(group, store)).toEqual({
       read: 1, search: 1, bash: 1, write: 0, edit: 0, code: 0, others: 1, errors: 1,
     })
+  })
+})
+
+describe('partitionToolGroups (turn-aware)', () => {
+  it('folds the closed turn process into one group ahead of the final reply', () => {
+    const store = storeOf({
+      u: { kind: 'user', data: {}, location: inTurn(1) },
+      think: { kind: 'assistant-step', data: { blocks: [{ kind: 'reasoning', text: 'hmm' }] }, location: inTurn(1) },
+      t1: { kind: 'tool-call', data: { root: settled('bash') }, location: inTurn(1) },
+      t2: { kind: 'tool-call', data: { root: settled('read') }, location: inTurn(1) },
+      reply: { kind: 'assistant-step', data: { blocks: [{ kind: 'text', text: 'done' }] }, location: inTurn(1) },
+    })
+    const items = partitionToolGroups(['u', 'think', 't1', 't2', 'reply'], store)
+    expect(items).toEqual([
+      { kind: 'node', key: 'u' },
+      { kind: 'group', keys: ['think', 't1', 't2'] },
+      { kind: 'node', key: 'reply' },
+    ] satisfies FlowItem[])
+  })
+
+  it('keeps prose-carrying intermediate steps visible', () => {
+    const store = storeOf({
+      u: { kind: 'user', data: {}, location: inTurn(1) },
+      mid: { kind: 'assistant-step', data: { blocks: [{ kind: 'text', text: 'narration' }] }, location: inTurn(1) },
+      t1: { kind: 'tool-call', data: { root: settled('bash') }, location: inTurn(1) },
+      reply: { kind: 'assistant-step', data: { blocks: [{ kind: 'text', text: 'final' }] }, location: inTurn(1) },
+    })
+    const items = partitionToolGroups(['u', 'mid', 't1', 'reply'], store)
+    expect(items).toEqual([
+      { kind: 'node', key: 'u' },
+      { kind: 'node', key: 'mid' },
+      { kind: 'group', keys: ['t1'] },
+      { kind: 'node', key: 'reply' },
+    ] satisfies FlowItem[])
+  })
+
+  it('leaves an open turn fully visible', () => {
+    const open = { kind: 'step' as const, turn: { turn: 2, status: 'open' as const } }
+    const store = storeOf({
+      t1: { kind: 'tool-call', data: { root: settled('bash') }, location: open },
+      r: { kind: 'tool-call', data: { root: running('read') }, location: open },
+    })
+    const items = partitionToolGroups(['t1', 'r'], store)
+    expect(items).toEqual([
+      { kind: 'node', key: 't1' },
+      { kind: 'node', key: 'r' },
+    ] satisfies FlowItem[])
   })
 })
