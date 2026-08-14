@@ -18,6 +18,8 @@ import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
+import { ToolGroupBlock } from './ToolGroupBlock.tsx'
+import { partitionToolGroups } from './tool-groups.ts'
 import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
 
@@ -164,6 +166,9 @@ export function ChatView({
     () => inbox.filter(item => item.placement === 'steering'),
     [inbox],
   )
+  // Settled tool runs collapse into disclosure blocks; running rows and every
+  // other kind render as themselves (see tool-groups.ts).
+  const flowItems = useMemo(() => partitionToolGroups(order, nodeStore), [order, nodeStore])
   const runningTurnStart = useMemo(() => runningTurnStartTime(timeline), [timeline])
 
   const listRef = useRef<HTMLDivElement | null>(null)
@@ -379,10 +384,20 @@ export function ChatView({
               </button>
             </div>
           )}
-          {order.map(nodeKey => (
+          {flowItems.map(item => item.kind === 'group' ? (
+            <ToolGroupBlock
+              key={`group:${item.keys[0]}`}
+              group={item}
+              resolveNodes={() => nodeStore}
+              seatProps={{
+                useSession, selectedCallId, cwd, openFile, inspectCall, forkAt, loadImage,
+                fileMentions, renderSlot, t,
+              }}
+            />
+          ) : (
             <ChatNodeSeat
-              key={nodeKey}
-              nodeKey={nodeKey}
+              key={item.key}
+              nodeKey={item.key}
               useSession={useSession}
               selectedCallId={selectedCallId}
               cwd={cwd}
