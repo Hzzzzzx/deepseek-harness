@@ -13,6 +13,55 @@ import { countGroup } from './tool-groups.ts'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import css from './ToolGroupBlock.module.css'
 
+/** First-line preview cap for one narration line inside the folded process. */
+const NARRATION_PREVIEW = 120
+
+/**
+ * One narration step inside the folded process, as a single muted line —
+ * the full markdown would break the process list into islands between the
+ * tool rows. Expanding reveals the step's whole prose.
+ */
+function NarrationLine({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const flat = text.replace(/\s+/g, ' ').trim()
+  const preview = !expanded && flat.length > NARRATION_PREVIEW ? `${flat.slice(0, NARRATION_PREVIEW)}…` : flat
+  return (
+    <button
+      type="button"
+      className={css.narration}
+      aria-expanded={expanded}
+      title={expanded ? undefined : text}
+      onClick={() => { setExpanded(value => !value) }}
+    >
+      {preview}
+    </button>
+  )
+}
+
+/**
+ * One folded member: tool rows keep their compact seat row; narration steps
+ * collapse to the muted line.
+ */
+function GroupMember({
+  nodeKey,
+  resolveNodes,
+  seatProps,
+}: {
+  nodeKey: string
+  resolveNodes: () => ChatNodeStore
+  seatProps: Omit<Parameters<typeof ChatNodeSeat>[0], 'nodeKey'>
+}) {
+  const node = resolveNodes().get(nodeKey)
+  if (node !== undefined && node.kind === 'assistant-step') {
+    const blocks = (node.data as { blocks?: readonly { kind: string; text?: string }[] }).blocks
+    const prose = Array.isArray(blocks)
+      ? blocks.filter(block => block.kind === 'text').map(block => block.text ?? '').join(' ')
+      : ''
+    if (prose !== '') return <NarrationLine text={prose} />
+  }
+  return <ChatNodeSeat nodeKey={nodeKey} {...seatProps} />
+}
+
 /** Counting buckets in summary order with their label keys (literal keys keep the translate call typed). */
 const VERB_KEYS = [
   ['read', 'group.verbs.read'],
@@ -66,7 +115,7 @@ export const ToolGroupBlock = memo(function ToolGroupBlock({
       {expanded && (
         <div className={css.members}>
           {group.keys.map(nodeKey => (
-            <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} {...seatProps} />
+            <GroupMember key={nodeKey} nodeKey={nodeKey} resolveNodes={resolveNodes} seatProps={seatProps} />
           ))}
         </div>
       )}
