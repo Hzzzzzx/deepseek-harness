@@ -422,6 +422,12 @@ export interface ConversationInjected {
    * the root renders as the inert composer's placeholder.
    */
   hooks: { composerBlock: ObservableSnapshot<ComposerBlock | undefined> }
+  /**
+   * Open the sidebar (reveal the narrow-viewport drawer). Geometry lives with
+   * ctx.layout; this is the mobile entry point the conversation surfaces,
+   * visible only below the auto-collapse breakpoint.
+   */
+  openSidebar: () => void
 }
 
 /** Business callbacks injected into the strict Session body seat. */

@@ -25,6 +25,43 @@
   --dsh-composer-dock-inset: 8px;
 }
 
+/* Mobile-only top bar: the sidebar-drawer entry (☰). Hidden on wide viewports
+   where the sidebar is a permanent grid column; shown below the auto-collapse
+   breakpoint (matches AppFrame's data-narrow) so the stowed drawer stays
+   reachable in hero and active phases. */
+.mobileBar {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .mobileBar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    height: 44px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--dsw-alias-border-l2);
+  }
+}
+
+.menuButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.menuButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
 .header {
   position: relative;
   flex: none;

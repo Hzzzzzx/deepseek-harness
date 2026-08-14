@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type { WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
+import { IconPanelLeftOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationSlotProps, InputZone } from '../contract/slots.ts'
 import { HeroGlow, HeroShell, WorkspaceChip, workspaceLabel } from './EmptyHero.tsx'
 import css from './ConversationRoot.module.css'
@@ -14,7 +15,7 @@ export type ConversationRootProps = ConversationSlotProps
 
 export function ConversationRoot({
   sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock,
-  renderSlot, renderSlotChain, selectWorkspace, t,
+  renderSlot, renderSlotChain, selectWorkspace, openSidebar, t,
 }: ConversationRootProps) {
   const openState = useSession(s => s.openState)
   const composerPhase = useSession(s => s.composerPhase)
@@ -185,6 +186,19 @@ export function ConversationRoot({
 
   return (
     <div className={css.root} data-phase={phase}>
+      {/* Mobile-only sidebar-drawer entry (below the auto-collapse breakpoint):
+          the sidebar is stowed as an overlay drawer, so the conversation needs
+          its own always-visible open affordance across hero and active phases. */}
+      <div className={css.mobileBar}>
+        <button
+          type="button"
+          className={css.menuButton}
+          aria-label={t('sidebar.open')}
+          onClick={() => { openSidebar() }}
+        >
+          <IconPanelLeftOutline16 size={18} />
+        </button>
+      </div>
       {renderSlot('conversation.session.header', {})}
       <div className={css.scrollBody} data-conversation-scroll="">
         {renderSlot('conversation.session', {})}
