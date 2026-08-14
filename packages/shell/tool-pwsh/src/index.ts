@@ -246,7 +246,10 @@ export function apply(ctx: Context, config: Config = {}): void {
     name: 'tool:pwsh',
     order: 105,
     text: 'Non-zero exits are reported as `[exit code: N]` markers; investigate failures before moving on. '
-      + 'On Windows a killed process settles as `[exit code: 1]` without a signal marker; treat a bare exit 1 after an interruption as a termination, not a command failure.',
+      + 'On Windows a killed process settles as `[exit code: 1]` without a signal marker; treat a bare exit 1 after an interruption as a termination, not a command failure. '
+      + 'Write every pwsh `description` argument in the user\'s conversation language '
+      + '(Chinese when the user writes Chinese), e.g. 运行测试套件 for "pnpm test"; '
+      + 'the description is displayed to the user in the UI.',
   })
 
   ctx.tools.register(defineTool({
