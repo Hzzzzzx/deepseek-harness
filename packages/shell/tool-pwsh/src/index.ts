@@ -262,10 +262,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         type: 'string',
         required: true,
         description: 'Clear, concise description of what this command does in active voice, '
-          + '5-10 words (shown in the UI), written in the user\'s conversation language '
-          + '(Chinese when the session is Chinese); keep the command itself verbatim. '
-          + 'Examples: "ls" → "列出当前目录文件"; '
-          + '"git status" → "查看工作区状态"; "Get-Process" → "列出运行中的进程".',
+          + '5-10 words (shown in the UI). Examples: "ls" → "List files in current directory"; '
+          + '"git status" → "Show working tree status"; "Get-Process" → "List running processes".',
       },
       timeoutMs: { type: 'number', description: 'Timeout in milliseconds. The executor applies its configured default and cap, and kills the command on expiry.' },
       workdir: { type: 'string', description: 'Working directory for this command. Defaults to the session workspace; a relative path is resolved against it.' },
