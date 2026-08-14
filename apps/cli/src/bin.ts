@@ -8,6 +8,10 @@
 
 /* v8 ignore file -- built-bin acceptance exercises this self-executing dispatch. */
 
+// Side-effect first: the env-proxy dispatcher must install before any import
+// that could touch the network creates the global fetch dispatcher.
+import './env-proxy.ts'
+
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
