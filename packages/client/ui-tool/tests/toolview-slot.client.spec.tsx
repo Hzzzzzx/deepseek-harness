@@ -74,6 +74,7 @@ async function bench(nodes: ToolResultNode[]) {
   runtime.provide('locale', locale)
   runtime.slots.installLocale(locale)
   await runtime.sessions.add({
+
     id: SID,
     summary: { title: 'S', displayTitle: 'S' },
     snapshot: { nodes, chat: toolChatSnapshot(nodes) },
@@ -98,10 +99,10 @@ describe('keyed toolview hole through the real machinery', () => {
     // bash: the sample plugin's keyed registration took the row (root
     // session → global arm, decided inside the component off useSessions).
     expect(view.container.querySelector('[data-sample="bash"]')).not.toBeNull()
-    expect(view.getByText('Bash')).toBeTruthy()
+    expect(view.getByText('Run done')).toBeTruthy()
     expect(view.getByText('Build')).toBeTruthy()
     // mystery: no registration under that key → render-site fallback.
-    expect(view.getByText('Tool call')).toBeTruthy()
+    expect(view.getByText('Call done')).toBeTruthy()
     await b.runtime.dispose()
   })
 
@@ -151,7 +152,7 @@ describe('keyed toolview hole through the real machinery', () => {
   it('a live keyed registration takes over its tool row and unload reverts to the fallback', async () => {
     const b = await bench([toolResult(3, 'c2', 'mystery', '{"n":1}')])
     const view = b.runtime.renderRoot()
-    expect(view.getByText('Tool call')).toBeTruthy()
+    expect(view.getByText('Call done')).toBeTruthy()
     let dispose = (): void => {}
     dispose = b.slots.register(
       { name: 'tool.call.toolview', key: 'mystery' },
@@ -163,7 +164,7 @@ describe('keyed toolview hole through the real machinery', () => {
     dispose()
     await b.runtime.flush()
     expect(view.queryByTestId('mystery-row')).toBeNull()
-    expect(view.getByText('Tool call')).toBeTruthy()
+    expect(view.getByText('Call done')).toBeTruthy()
     await b.runtime.dispose()
   })
 

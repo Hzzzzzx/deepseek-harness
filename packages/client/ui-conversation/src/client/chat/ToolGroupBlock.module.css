@@ -1,0 +1,17 @@
+/* One collapsed tool run: the disclosure line and its indented member rows. */
+.root {
+  display: block;
+}
+
+.row {
+  color: var(--dsw-alias-text-tertiary, inherit);
+}
+
+.title {
+  font-size: 12px;
+}
+
+/* Members render indented one step under the disclosure. */
+.members {
+  padding-left: 16px;
+}

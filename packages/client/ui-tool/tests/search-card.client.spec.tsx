@@ -246,7 +246,7 @@ describe('SearchRow keyed card', () => {
 
   it('collapses to the summary row; expanding reveals the grep card', () => {
     const view = render(<SearchRow {...rowProps(settledGrep(), 'grep')} />)
-    expect(view.getByText('Grep')).toBeTruthy()
+    expect(view.getByText('已搜索')).toBeTruthy()
     expect(view.queryByText('Search')).toBeNull()
     // Collapsed: the card is not in the DOM until the row is expanded.
     expect(searchKindOf(view.container)).toBeNull()
@@ -260,7 +260,7 @@ describe('SearchRow keyed card', () => {
 
   it('expands to the glob path card', () => {
     const view = render(<SearchRow {...rowProps(settledGlob(), 'glob')} />)
-    expect(view.getByText('Glob')).toBeTruthy()
+    expect(view.getByText('已搜索')).toBeTruthy()
     expect(view.queryByText('Search')).toBeNull()
     expect(searchKindOf(view.container)).toBeNull()
     toggleRow(view)

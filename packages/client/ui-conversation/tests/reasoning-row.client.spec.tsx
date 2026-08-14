@@ -39,7 +39,7 @@ afterEach(() => {
 const t = makeTranslate(zh, commonZh)
 
 describe('ReasoningRow', () => {
-  it('follows the latest streaming line, scrolls to its end, then restores the settled first line', () => {
+  it('streaming opens the body live; settling folds back to the first-line summary', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
@@ -47,26 +47,12 @@ describe('ReasoningRow', () => {
         streaming
       />,
     )
+    const row = view.getByRole('button')
+    // Running: lifecycle default expands the disclosure, live body, running title.
+    expect(row.getAttribute('aria-expanded')).toBe('true')
+    expect(view.getByText('思考中')).toBeTruthy()
     expect(view.getByText('运行中')).toBeTruthy()
-    const summary = view.getByText('Newest reasoning tokens')
-    Object.defineProperties(summary, {
-      scrollWidth: { configurable: true, value: 300 },
-      clientWidth: { configurable: true, value: 100 },
-    })
-
-    view.rerender(
-      <AssistantMarkdown
-        t={t}
-        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving' }]}
-        streaming
-      />,
-    )
-    expect(summary.scrollLeft).toBe(0)
-    flushAnimationFrames(2)
-    expect(summary.scrollLeft).toBe(0)
-    flushAnimationFrames(1)
-    expect(summary.scrollLeft).toBe(200)
-    expect(summary.getAttribute('data-follow-end')).toBe('true')
+    expect(view.container.querySelector('[class*="thinkBody"]')).not.toBeNull()
 
     view.rerender(
       <AssistantMarkdown
@@ -76,13 +62,45 @@ describe('ReasoningRow', () => {
       />,
     )
     flushAnimationFrames(3)
+    // Settled: folds back to the one-line first-line summary with the done title.
+    expect(view.getByText('已完成思考')).toBeTruthy()
     expect(view.getByText('Inspect the session')).toBeTruthy()
+    expect(row.getAttribute('aria-expanded')).toBe('false')
     expect(view.queryByText('运行中')).toBeNull()
-    expect(summary.scrollLeft).toBe(0)
-    expect(summary.hasAttribute('data-follow-end')).toBe(false)
   })
 
-  it('expands from either Think or the reasoning summary', () => {
+  it('a manual collapse while streaming sticks through the settle', () => {
+    const view = render(
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens' }]}
+        streaming
+      />,
+    )
+    const row = view.getByRole('button')
+    fireEvent.click(view.getByText('思考中'))
+    expect(row.getAttribute('aria-expanded')).toBe('false')
+
+    view.rerender(
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving' }]}
+        streaming
+      />,
+    )
+    expect(row.getAttribute('aria-expanded')).toBe('false')
+
+    view.rerender(
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving\n' }]}
+        streaming={false}
+      />,
+    )
+    expect(row.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('expands from either the title or the reasoning summary', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
@@ -96,11 +114,11 @@ describe('ReasoningRow', () => {
     expect(row.getAttribute('aria-expanded')).toBe('true')
     expect(view.getByText(/Check persistence/)).toBeTruthy()
 
-    fireEvent.click(view.getByText('Think'))
+    fireEvent.click(view.getByText('已完成思考'))
     expect(row.getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('expanded Think drops the inline summary and renders plain prose, no IN card', () => {
+  it('an expanded settled row drops the inline summary and renders plain prose, no IN card', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
@@ -108,7 +126,7 @@ describe('ReasoningRow', () => {
         streaming={false}
       />,
     )
-    fireEvent.click(view.getByText('Think'))
+    fireEvent.click(view.getByText('已完成思考'))
     expect(view.getAllByText(/Inspect the session/)).toHaveLength(1)
     expect(view.queryByText('IN')).toBeNull()
     expect(view.container.querySelector('[class*="ioCard"]')).toBeNull()

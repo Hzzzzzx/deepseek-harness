@@ -425,6 +425,9 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByText('do the thing')).toBeTruthy()
     expect(view.getByText('running tools')).toBeTruthy()
+    // The two settled tool runs collapsed into one disclosure; expand it to
+    // reach the member rows (the ungrouped rendering is asserted below).
+    fireEvent.click(view.container.querySelector('[data-tool-group] [aria-expanded]')!)
     expect(view.getByTestId('tool-seat-a').textContent).toBe('bash:a')
     expect(view.getByTestId('tool-seat-b').textContent).toBe('bash:b')
     expect([...view.container.querySelectorAll('[data-chat-flow-key]')].map(row => ({
