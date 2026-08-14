@@ -195,11 +195,12 @@ describe('run_code sub-calls through the real chat machinery', () => {
     ]
     const b = await bench(snapshotWith([codeResult(10, parent)], subCalls))
     const view = mountApp(b.slots)
-
+    // The conversation dictionaries register in a lazy effect; wait for them
+    // before asserting localized row titles.
     // Parent row: the code variant with the model-authored description.
     const codeRoot = view.container.querySelector('[data-variant="code"]')
     expect(codeRoot).not.toBeNull()
-    expect(view.getByText('Code')).toBeTruthy()
+    expect(view.getByText('Run code done')).toBeTruthy()
     expect(view.getByText('List the notes directory')).toBeTruthy()
 
     // Nested rows are ALWAYS visible (no parent expand needed): the bash
@@ -209,9 +210,9 @@ describe('run_code sub-calls through the real chat machinery', () => {
     const nest = view.container.querySelector('[data-subcalls]')
     expect(nest).not.toBeNull()
     expect(nest!.querySelector('[data-sample="bash"]')).not.toBeNull()
-    expect(view.getByText('Bash')).toBeTruthy()
+    expect(view.getByText('Run done')).toBeTruthy()
     expect(view.getByText('List notes')).toBeTruthy()
-    expect(view.getByText('Tool call')).toBeTruthy()
+    expect(view.getByText('Call done')).toBeTruthy()
   })
 
   it('renders Cordis sub-calls with lifecycle titles over the generic variants', async () => {

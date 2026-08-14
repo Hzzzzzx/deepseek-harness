@@ -68,6 +68,11 @@ const TOOL_TITLES: Record<string, string> = {
   pwsh: 'Pwsh',
 }
 
+/** Tool-owned specific title (Inspect, Run Cordis Plugin, …) when one exists. */
+export function toolSpecificTitle(toolName: string): string | undefined {
+  return TOOL_TITLES[toolName]
+}
+
 /**
  * Classify a tool name into its row variant.
  * @param toolName - wire tool name.
