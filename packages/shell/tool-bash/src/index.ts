@@ -236,10 +236,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.systemPrompt.section({
     name: 'tool:bash',
     order: 105,
-    text: 'Check the [exit code: N] marker on every bash result; investigate failures before moving on. '
-      + 'Write every bash `description` argument in the user\'s conversation language '
-      + '(Chinese when the user writes Chinese), e.g. 运行测试套件 for "pnpm test"; '
-      + 'the description is displayed to the user in the UI.',
+    text: 'Check the [exit code: N] marker on every bash result; investigate failures before moving on.',
   })
 
   ctx.tools.register(defineTool({
