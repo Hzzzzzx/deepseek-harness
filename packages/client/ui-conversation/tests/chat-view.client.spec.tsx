@@ -425,10 +425,9 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByText('do the thing')).toBeTruthy()
     expect(view.getByText('running tools')).toBeTruthy()
-    // The two settled tool runs collapsed into one disclosure; expand it,
-    // then its nested consecutive-tool sub-group, to reach the member rows.
+    // The two settled tool runs collapsed into one disclosure; a tools-only
+    // run expands flat (no nested sub-group layer).
     fireEvent.click(view.container.querySelector('[data-tool-group] [aria-expanded]')!)
-    fireEvent.click(view.container.querySelectorAll('[data-tool-group] [aria-expanded]')[1]!)
     expect(view.getByTestId('tool-seat-a').textContent).toBe('bash:a')
     expect(view.getByTestId('tool-seat-b').textContent).toBe('bash:b')
     expect([...view.container.querySelectorAll('[data-chat-flow-key]')].map(row => ({

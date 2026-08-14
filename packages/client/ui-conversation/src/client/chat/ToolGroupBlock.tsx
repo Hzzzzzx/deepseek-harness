@@ -11,10 +11,11 @@ import { memo, useMemo, useState } from 'react'
 import { DisclosureRow, IconChecklistOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AssistantBlock, ChatNodeStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { FlowItem, ToolGroup } from './tool-groups.ts'
-import { countGroup, partitionToolGroups } from './tool-groups.ts'
+import { countGroup, groupHasNarration, groupSpanMs, partitionToolGroups } from './tool-groups.ts'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
+import { formatRunDuration } from './message-chrome.ts'
 import css from './ToolGroupBlock.module.css'
 
 /** ChatView props forwarded to every member ChatNodeSeat. */
@@ -31,7 +32,7 @@ const VERB_KEYS = [
   ['others', 'group.verbs.others'],
 ] as const
 
-/** Build one group's counted summary line through the locale seat. */
+/** Build one group's counted summary line, with wall-clock span, through the locale seat. */
 function groupSummary(group: ToolGroup, resolveNodes: () => ChatNodeStore, t: ChatViewSlotProps['t']): string {
   const counts = countGroup(group, resolveNodes())
   const verbs = VERB_KEYS
@@ -39,7 +40,9 @@ function groupSummary(group: ToolGroup, resolveNodes: () => ChatNodeStore, t: Ch
     .map(([bucket, key]) => t(key, { count: counts[bucket] }))
     .join(' · ')
   const errors = counts.errors > 0 ? t('group.errors', { count: counts.errors }) : ''
-  return `${t('group.summary', { verbs })}${errors}`
+  const span = groupSpanMs(group, resolveNodes())
+  const duration = span === null ? '' : ` · ${formatRunDuration(span, t)}`
+  return `${t('group.summary', { verbs })}${errors}${duration}`
 }
 
 /**
@@ -130,10 +133,14 @@ export const ToolGroupBlock = memo(function ToolGroupBlock({
     () => groupSummary(group, resolveNodes, seatProps.t as ChatViewSlotProps['t']),
     [group, resolveNodes, seatProps.t],
   )
-  // Inside the expanded body, consecutive tool rows regroup (the same
-  // consecutive-run rule, one level down); narration and other rows keep
-  // their places between the sub-groups.
-  const inner = useMemo(() => partitionToolGroups(group.keys, resolveNodes()), [group, resolveNodes])
+  // Inside the expanded body: a run of tools WITHOUT narration renders
+  // flat (nesting an identical counted line adds nothing); with narration,
+  // the prose renders normally and each tool run between prose folds once.
+  const hasNarration = useMemo(() => groupHasNarration(group, resolveNodes()), [group, resolveNodes])
+  const inner = useMemo(
+    () => hasNarration ? partitionToolGroups(group.keys, resolveNodes()) : null,
+    [hasNarration, group, resolveNodes],
+  )
   return (
     <div className={css.root} data-tool-group={group.keys[0]}>
       <DisclosureRow
@@ -149,16 +156,20 @@ export const ToolGroupBlock = memo(function ToolGroupBlock({
       />
       {expanded && (
         <div className={css.members}>
-          {inner.map((item: FlowItem) => {
-            if (item.kind === 'group') {
-              return <ToolSubGroup key={`sub:${item.keys[0]}`} group={item} resolveNodes={resolveNodes} seatProps={seatProps} />
-            }
-            const node = resolveNodes().get(item.key)
-            if (node !== undefined && node.kind === 'assistant-step') {
-              return <NarrationStep key={item.key} nodeKey={item.key} resolveNodes={resolveNodes} seatProps={seatProps} />
-            }
-            return <ChatNodeSeat key={item.key} nodeKey={item.key} {...seatProps} />
-          })}
+          {inner === null
+            ? group.keys.map(nodeKey => (
+              <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} {...seatProps} />
+            ))
+            : inner.map((item: FlowItem) => {
+              if (item.kind === 'group') {
+                return <ToolSubGroup key={`sub:${item.keys[0]}`} group={item} resolveNodes={resolveNodes} seatProps={seatProps} />
+              }
+              const node = resolveNodes().get(item.key)
+              if (node !== undefined && node.kind === 'assistant-step') {
+                return <NarrationStep key={item.key} nodeKey={item.key} resolveNodes={resolveNodes} seatProps={seatProps} />
+              }
+              return <ChatNodeSeat key={item.key} nodeKey={item.key} {...seatProps} />
+            })}
         </div>
       )}
     </div>

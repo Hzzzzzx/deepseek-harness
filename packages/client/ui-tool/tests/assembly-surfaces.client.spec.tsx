@@ -132,12 +132,10 @@ describe('terminal card assembly', () => {
       bashResult(4, 'c-fallback', { call: { name: 'fx-bash', argsRaw: '{"command":"ls -la"}' } }),
     ])
     const view = runtime.renderRoot()
-    // The chat folded the two settled rows into one disclosure; open it,
-    // then the nested consecutive-tool sub-group.
+    // The chat folded the two settled rows into one disclosure; a tools-only
+    // run expands flat (no nested sub-group layer).
     const fold = view.container.querySelector('[data-tool-group] [aria-expanded]')
     if (fold !== null) fireEvent.click(fold)
-    const nested = view.container.querySelectorAll('[data-tool-group] [aria-expanded]')[1]
-    if (nested !== undefined) fireEvent.click(nested)
 
     // Keyed BashRow: collapsed by default, the whole summary row is the toggle.
     const keyedRow = view.container.querySelector('[data-sample="bash"]')
