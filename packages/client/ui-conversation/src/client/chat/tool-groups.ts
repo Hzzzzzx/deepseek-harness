@@ -129,6 +129,26 @@ export function partitionToolGroups(order: readonly string[], nodes: ChatNodeSto
   return items
 }
 
+
+/** Wall-clock span of one folded run: first member's call start to last member's settle. */
+export function groupSpanMs(group: ToolGroup, nodes: ChatNodeStore): number | null {
+  let start: number | undefined
+  let end: number | undefined
+  for (const key of group.keys) {
+    const root = toolRootOf(nodes, key)
+    if (root === undefined) continue
+    const callStart = 'kind' in root ? root.callTime ?? root.time : root.time
+    if (start === undefined || callStart < start) start = callStart
+    if (end === undefined || root.time > end) end = root.time
+  }
+  return start !== undefined && end !== undefined && end > start ? end - start : null
+}
+
+/** Whether the folded run contains any narration step (drives nested folding). */
+export function groupHasNarration(group: ToolGroup, nodes: ChatNodeStore): boolean {
+  return group.keys.some(key => nodes.get(key)?.kind === 'assistant-step')
+}
+
 /** Verb-keyed counts for one group's summary line. */
 export interface GroupCounts {
   readonly read: number
