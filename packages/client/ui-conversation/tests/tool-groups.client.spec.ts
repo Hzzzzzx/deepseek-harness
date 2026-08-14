@@ -112,7 +112,7 @@ describe('partitionToolGroups (turn-aware)', () => {
     ] satisfies FlowItem[])
   })
 
-  it('keeps prose-carrying intermediate steps visible', () => {
+  it('folds intermediate narration too; only the last prose step stays', () => {
     const store = storeOf({
       u: { kind: 'user', data: {}, location: inTurn(1) },
       mid: { kind: 'assistant-step', data: { blocks: [{ kind: 'text', text: 'narration' }] }, location: inTurn(1) },
@@ -122,9 +122,23 @@ describe('partitionToolGroups (turn-aware)', () => {
     const items = partitionToolGroups(['u', 'mid', 't1', 'reply'], store)
     expect(items).toEqual([
       { kind: 'node', key: 'u' },
-      { kind: 'node', key: 'mid' },
-      { kind: 'group', keys: ['t1'] },
+      { kind: 'group', keys: ['mid', 't1'] },
       { kind: 'node', key: 'reply' },
+    ] satisfies FlowItem[])
+  })
+
+  it('keeps the LAST prose step when a turn replies twice', () => {
+    const store = storeOf({
+      u: { kind: 'user', data: {}, location: inTurn(1) },
+      early: { kind: 'assistant-step', data: { blocks: [{ kind: 'text', text: 'early reply' }] }, location: inTurn(1) },
+      t1: { kind: 'tool-call', data: { root: settled('edit') }, location: inTurn(1) },
+      late: { kind: 'assistant-step', data: { blocks: [{ kind: 'text', text: 'late reply' }] }, location: inTurn(1) },
+    })
+    const items = partitionToolGroups(['u', 'early', 't1', 'late'], store)
+    expect(items).toEqual([
+      { kind: 'node', key: 'u' },
+      { kind: 'group', keys: ['early', 't1'] },
+      { kind: 'node', key: 'late' },
     ] satisfies FlowItem[])
   })
 

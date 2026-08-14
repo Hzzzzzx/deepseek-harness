@@ -1,12 +1,11 @@
 /**
- * Turn-aware process collapsing: when a turn closes, its intermediate
- * process — settled tool calls and the prose-free assistant steps (pure
- * thinking / tool-head chatter) that are not the turn's final reply — folds
+ * Turn-aware process collapsing: when a turn closes, only its LAST
+ * prose-carrying assistant reply stays visible; everything before it —
+ * settled tool calls, thinking steps, and intermediate narration — folds
  * into ONE disclosure block anchored ahead of that reply, so a completed
  * turn reads as its answer with the work behind one line (read 3 files ·
- * ran 2 commands). Prose-carrying steps stay visible — narration is reading
- * material, not process. An open turn keeps every row visible (the reader
- * follows live work). Snapshots without resolved turns fall back to folding
+ * ran 2 commands). An open turn keeps every row visible (the reader follows
+ * live work). Snapshots without resolved turns fall back to folding
  * consecutive runs of settled tool rows.
  */
 
@@ -49,8 +48,8 @@ function isAssistantStep(nodes: ChatNodeStore, key: string): boolean {
 
 /**
  * Whether an assistant step carries reading material (text or image blocks).
- * Prose-free steps — reasoning and tool heads only — are process chatter and
- * fold; prose steps stay visible even mid-turn-history.
+ * The LAST such step of a closed turn is the reply the flow keeps visible;
+ * every earlier step — prose or not — is process and folds.
  */
 function assistantStepHasProse(nodes: ChatNodeStore, key: string): boolean {
   const node = nodes.get(key)
@@ -79,7 +78,9 @@ export function partitionToolGroups(order: readonly string[], nodes: ChatNodeSto
   for (const key of order) {
     const turn = turnOf(nodes, key)
     if (turn === undefined) continue
-    if (isAssistantStep(nodes, key)) keeperOf.set(turn, key)
+    // The keeper is the LAST prose-carrying step in flow order; later
+    // prose steps overwrite earlier ones, so the turn shows one reply.
+    if (isAssistantStep(nodes, key) && assistantStepHasProse(nodes, key)) keeperOf.set(turn, key)
   }
   for (const key of order) {
     const turn = turnOf(nodes, key)
@@ -87,7 +88,7 @@ export function partitionToolGroups(order: readonly string[], nodes: ChatNodeSto
     const node = nodes.get(key)
     const root = toolRootOf(nodes, key)
     const foldable = (node !== undefined && root !== undefined && !isRunningTool(root))
-      || (isAssistantStep(nodes, key) && keeperOf.get(turn) !== key && !assistantStepHasProse(nodes, key))
+      || (isAssistantStep(nodes, key) && keeperOf.get(turn) !== key)
     if (!foldable) continue
     const list = foldableOf.get(turn)
     if (list === undefined) foldableOf.set(turn, [key])
