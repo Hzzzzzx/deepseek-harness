@@ -42,7 +42,13 @@ interface DeliverablesState extends DeliverablesTurnData {
  */
 function producedPaths(view: ToolResultNode['callView']): readonly string[] {
   if (view === null) return []
-  if (view.card === 'diff') return (view.locations ?? []).map(location => location.path)
+  if (view.card === 'diff') {
+    // Result-time diff views carry no `locations` (the wire type omits the
+    // field); the diffs themselves name every touched file, so they are the
+    // settled-view source. Call-time views keep their follow-along locations.
+    const located = (view.locations ?? view.diffs.map(diff => diff.path))
+    return located.map(path => (typeof path === 'string' ? path : path.path))
+  }
   if (view.card === 'generic' && view.kind === 'edit') {
     return (view.locations ?? []).map(location => location.path)
   }
