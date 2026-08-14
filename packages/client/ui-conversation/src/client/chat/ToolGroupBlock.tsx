@@ -138,7 +138,7 @@ export const ToolGroupBlock = memo(function ToolGroupBlock({
   // the prose renders normally and each tool run between prose folds once.
   const hasNarration = useMemo(() => groupHasNarration(group, resolveNodes()), [group, resolveNodes])
   const inner = useMemo(
-    () => hasNarration ? partitionToolGroups(group.keys, resolveNodes()) : null,
+    () => hasNarration ? partitionToolGroups(group.keys, resolveNodes(), 'runs') : null,
     [hasNarration, group, resolveNodes],
   )
   return (

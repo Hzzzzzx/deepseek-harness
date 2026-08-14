@@ -58,20 +58,56 @@ function assistantStepHasProse(nodes: ChatNodeStore, key: string): boolean {
   return Array.isArray(blocks) && blocks.some(block => block.kind === 'text' || block.kind === 'image')
 }
 
+/** Partition mode: turn-level folding (the flow) or consecutive-runs only (nested). */
+export type PartitionMode = 'turn' | 'runs'
+
 /**
  * Partition the ordered node keys into flow items.
  *
- * Turn-aware pass: for every closed turn, the last assistant-step is the
- * keeper; every other assistant-step and every settled tool-call of that
- * turn folds into one group placed at the first folded member's position.
- * Nodes of other kinds (errors, tails, retries) keep their positions.
- * Keys outside closed turns render as themselves, except the fallback:
- * consecutive settled tool runs of length >= GROUP_MIN still fold.
+ * Turn-aware pass ('turn', the chat flow): for every closed turn, the last
+ * assistant-step is the keeper; every other assistant-step and every settled
+ * tool-call of that turn folds into one group placed at the first folded
+ * member's position. Nodes of other kinds (errors, tails, retries) keep their
+ * positions. Keys outside closed turns render as themselves, except the
+ * fallback: consecutive settled tool runs of length >= GROUP_MIN still fold.
+ *
+ * Consecutive-runs pass ('runs', nested inside an expanded turn group): no
+ * turn logic — narration steps render as themselves and each maximal run of
+ * settled tool calls between them folds once. Running the turn pass here
+ * would re-fold the whole member list (every member shares the outer turn)
+ * into one identical nested group.
  * @param order - the chat snapshot's ordered node keys.
  * @param nodes - the chat node store (kind, tool lifecycle, location).
+ * @param mode - 'turn' (default) for the flow, 'runs' for nested bodies.
  * @returns flow items in order.
  */
-export function partitionToolGroups(order: readonly string[], nodes: ChatNodeStore): readonly FlowItem[] {
+export function partitionToolGroups(
+  order: readonly string[],
+  nodes: ChatNodeStore,
+  mode: PartitionMode = 'turn',
+): readonly FlowItem[] {
+  // Consecutive-runs mode: narration stays, maximal settled-tool runs fold.
+  if (mode === 'runs') {
+    const runItems: FlowItem[] = []
+    let run: string[] = []
+    const flush = (): void => {
+      if (run.length >= GROUP_MIN) runItems.push({ kind: 'group', keys: run })
+      else for (const key of run) runItems.push({ kind: 'node', key })
+      run = []
+    }
+    for (const key of order) {
+      const root = toolRootOf(nodes, key)
+      if (root !== undefined && !isRunningTool(root)) {
+        run.push(key)
+        continue
+      }
+      flush()
+      runItems.push({ kind: 'node', key })
+    }
+    flush()
+    return runItems
+  }
+
   // Pass 1: per closed turn, the foldable keys and each turn's keeper.
   const keeperOf = new Map<number, string>()
   const foldableOf = new Map<number, string[]>()
