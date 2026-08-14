@@ -11,7 +11,29 @@
   font-size: 12px;
 }
 
-/* Members render indented one step under the disclosure. */
+/* Members render indented one step under the disclosure, tightly stacked. */
 .members {
   padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* One narration line: muted, single-line, left-aligned text button. */
+.narration {
+  border: none;
+  padding: 2px 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.narration:hover {
+  opacity: 0.85;
 }
